@@ -1,0 +1,8 @@
+[package]
+name = "GSW"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nalgebra = "0.32"
+rand = "0.8"
