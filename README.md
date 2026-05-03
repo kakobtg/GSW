@@ -1,6 +1,6 @@
 # GSW Homomorphic Encryption in Rust
 
-A functional implementation of the Gentry-Sahai-Waters (GSW) homomorphic encryption scheme (GSW13) in Rust. This project demonstrates Key Generation, Encryption, Decryption, and Homomorphic operations (Addition and Multiplication) based on the Learning with Errors (LWE) problem. It also includes an advanced implementation of **Ring-GSW (RGSW)** based on Ring-LWE.
+A functional implementation of the Gentry-Sahai-Waters (GSW) homomorphic encryption scheme (GSW13) in Rust. This project demonstrates Key Generation, Encryption, Decryption, and Homomorphic operations (Addition and Multiplication) based on the Learning with Errors (LWE) problem. It also includes an implementation of **Ring-GSW (RGSW)** based on Ring-LWE.
 
 ## Prerequisites
 
@@ -87,3 +87,7 @@ This heavily controlled noise growth allows the scheme to evaluate relatively de
 ## Constraints
 
 As per the project requirements, bootstrapping is intentionally omitted from this implementation.
+
+## References
+
+- Craig Gentry, Amit Sahai, and Brent Waters. [Homomorphic encryption from learning with errors: Conceptually-simpler, asymptotically-faster, attribute-based](https://eprint.iacr.org/2013/340.pdf). In Ran Canetti and Juan A. Garay, editors, Advances in Cryptology – CRYPTO 2013, Part I, volume 8042 of Lecture Notes in Computer Science, pages 75–92, Santa Barbara, CA, USA, August 18–22, 2013. Springer, Heidelberg, Germany.
