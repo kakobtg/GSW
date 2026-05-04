@@ -18,17 +18,17 @@ As described in the GSW13 paper, the core of the scheme relies on the **approxim
 - The **message** $\mu$ is the eigenvalue.
 
 The decryption relation is defined as:
-$$ C \cdot \vec{v} = \mu \cdot \vec{v} + \vec{e} $$
+$ C \cdot \vec{v} = \mu \cdot \vec{v} + \vec{e} $
 where $\vec{e}$ is a "small" error vector introduced for LWE security.
 
 ### Homomorphic Addition
 Matrix addition corresponds to homomorphic addition of the underlying messages:
-$$ (C_1 + C_2) \cdot \vec{v} = C_1 \cdot \vec{v} + C_2 \cdot \vec{v} = (\mu_1 + \mu_2) \cdot \vec{v} + (\vec{e}_1 + \vec{e}_2) $$
+$ (C_1 + C_2) \cdot \vec{v} = C_1 \cdot \vec{v} + C_2 \cdot \vec{v} = (\mu_1 + \mu_2) \cdot \vec{v} + (\vec{e}_1 + \vec{e}_2) $
 The error grows additively, which is standard and easily tolerated.
 
 ### Homomorphic Multiplication
 Matrix multiplication corresponds to homomorphic multiplication:
-$$ C_1 \cdot C_2 \cdot \vec{v} = C_1 \cdot (\mu_2 \cdot \vec{v} + \vec{e}_2) = \mu_2 \cdot (C_1 \cdot \vec{v}) + C_1 \cdot \vec{e}_2 = \mu_1 \cdot \mu_2 \cdot \vec{v} + \mu_2 \cdot \vec{e}_1 + C_1 \cdot \vec{e}_2 $$
+$ C_1 \cdot C_2 \cdot \vec{v} = C_1 \cdot (\mu_2 \cdot \vec{v} + \vec{e}_2) = \mu_2 \cdot (C_1 \cdot \vec{v}) + C_1 \cdot \vec{e}_2 = \mu_1 \cdot \mu_2 \cdot \vec{v} + \mu_2 \cdot \vec{e}_1 + C_1 \cdot \vec{e}_2 $
 
 To prevent the term $C_1 \cdot \vec{e}_2$ from causing exponential error growth, the scheme ensures that the matrices used in multiplication have very small coefficients (e.g., $0$ or $1$) by utilizing the Gadget Matrix and Bit Decomposition.
 
@@ -41,7 +41,7 @@ Instead of operating on matrices of integers, RGSW operates on matrices of **pol
 - **Polynomial Matrices:** Ciphertexts are matrices where every element is a polynomial in $R_q$.
 - **Secret Key:** The secret key is a vector of polynomials, typically $\vec{v} = (-s, 1)^T$, where $s$ is a binary or small polynomial.
 - **Decryption Relation:** The approximate eigenvector method holds identically over the polynomial ring:
-  $$ C \cdot \vec{v} = \mu \cdot \vec{v} + \vec{e} $$
+  $ C \cdot \vec{v} = \mu \cdot \vec{v} + \vec{e} $
   where multiplication is polynomial multiplication modulo $(X^N + 1)$ and modulo $q$.
 
 ### Advantages and Coefficient Bit-Decomposition
@@ -78,7 +78,7 @@ The GSW scheme manages this using the **Gadget Matrix ($G$)** and the **Flatteni
 ### Multiplication Noise Trace
 When computing $C_{prod} = C_1 \cdot G^{-1}(C_2)$, the decryption relation maps to:
 
-$$v^T \cdot C_{prod} \approx [E_1 \cdot G^{-1}(C_2) + m_1 \cdot E_2] + (m_1 \cdot m_2) \cdot v^T \cdot G$$
+$v^T \cdot C_{prod} \approx [E_1 \cdot G^{-1}(C_2) + m_1 \cdot E_2] + (m_1 \cdot m_2) \cdot v^T \cdot G$
 
 Because $G^{-1}(C_2)$ consists purely of binary values ($\{0, 1\}$), multiplying it by the noise $E_1$ acts as a simple addition of the noise terms. As a result, the noise grows **asymmetrically and linearly** (scaled at worst by the matrix dimension $N$), rather than exponentially. 
 
