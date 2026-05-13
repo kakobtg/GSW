@@ -89,6 +89,20 @@ pub fn decrypt_poly(v: &PolyMatrix, c: &RgswPolyCiphertext) -> Poly {
     res
 }
 
+pub fn encrypt_integer_poly(a: &PolyMatrix, m: &Poly, rng: &mut impl Rng) -> RgswBitCiphertext {
+    RgswBitCiphertext(core_encrypt(a, m, rng))
+}
+
+pub fn decrypt_integer_poly(v: &PolyMatrix, c: &RgswBitCiphertext) -> Poly {
+    let mut res = Poly::zero();
+    for (i, &val) in core_decrypt(v, &c.0, L + INT_SCALE_SHIFT).coefs.iter().enumerate() {
+        let val = val.rem_euclid(Q);
+        let centered = if val > Q / 2 { val - Q } else { val };
+        res.coefs[i] = (centered as f64 / (1_i64 << INT_SCALE_SHIFT) as f64).round() as i64;
+    }
+    res
+}
+
 fn core_decrypt(v: &PolyMatrix, c: &PolyMatrix, target_col: usize) -> Poly {
     let v_t = v.transpose();
     let mut res = Poly::zero();

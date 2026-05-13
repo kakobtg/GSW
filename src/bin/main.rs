@@ -5,8 +5,9 @@ use GSW::gsw::{
 };
 use GSW::rgsw::{
     keygen as rgsw_keygen, encrypt as rgsw_encrypt, decrypt as rgsw_decrypt,
-    homomorphic_add as rgsw_add, encrypt_poly, decrypt_poly, encrypt_integer as rgsw_enc_int,
-    decrypt_integer as rgsw_dec_int, Poly
+    homomorphic_add as rgsw_add, homomorphic_mul as rgsw_mul, encrypt_poly, 
+    decrypt_poly, encrypt_integer as rgsw_enc_int, decrypt_integer as rgsw_dec_int, 
+    Poly, encode_slots, decode_slots, encrypt_integer_poly, decrypt_integer_poly
 };
 use rand::thread_rng;
 
@@ -182,6 +183,61 @@ fn run_complex_circuit_with_bootstrapping_demo() {
     }
 }
 
+fn run_limits_demo() {
+    use GSW::params::rgsw::{N, T};
+    let mut rng = thread_rng();
+    
+    println!("\n=================================================");
+    println!("=== 6. Hardware Limits & Data Capacity Demo   ===");
+    println!("=================================================");
+
+    let (v_gsw, a_gsw) = keygen(&mut rng);
+    let (v_rgsw, a_rgsw) = rgsw_keygen(&mut rng);
+
+    println!("\n--- GSW Integer Multiplication Limits ---");
+    println!("(Space: 24 bits (Q) - 14 bits (Scale) - 1 bit (Sign) = 9 bits -> Max Product ~511)");
+    
+    let int_safe = 20;
+    let c_safe = encrypt_integer(&a_gsw, int_safe, &mut rng).unwrap();
+    let c_safe_prod = homomorphic_mul_int(&c_safe, &c_safe);
+    println!("Evaluating {} * {} (Fits in 9 bits):", int_safe, int_safe);
+    println!("  -> Expected: {}", int_safe * int_safe);
+    println!("  -> Decrypted: {}", decrypt_integer(&v_gsw, &c_safe_prod));
+
+    println!("\n--- GSW Integer Multiplication Overflow ---");
+    let int_a = 120;
+    let int_b = 120;
+    let c_a = encrypt_integer(&a_gsw, int_a, &mut rng).unwrap();
+    let c_b = encrypt_integer(&a_gsw, int_b, &mut rng).unwrap();
+    let c_prod = homomorphic_mul_int(&c_a, &c_b);
+    println!("Evaluating {} * {} (Exceeds 1,023!):", int_a, int_b);
+    println!("  -> Expected: {}", int_a * int_b);
+    println!("  -> Decrypted: {} (Result wrapped modulo Q!)", decrypt_integer(&v_gsw, &c_prod));
+
+    println!("\n--- RGSW Integer Addition Limit (Max ~131,071) ---");
+    let big_int_a = 60_000;
+    let big_int_b = 65_000;
+    let c_big_a = rgsw_enc_int(&a_rgsw, big_int_a, &mut rng).unwrap();
+    let c_big_b = rgsw_enc_int(&a_rgsw, big_int_b, &mut rng).unwrap();
+    let c_big_sum = rgsw_add(&c_big_a, &c_big_b);
+    println!("Evaluating {} + {}:", big_int_a, big_int_b);
+    println!("  -> Expected: {}", big_int_a + big_int_b);
+    println!("  -> Decrypted: {}", rgsw_dec_int(&v_rgsw, &c_big_sum));
+
+    println!("\n--- RGSW Vector Limits (N={}, T={}) ---", N, T);
+    let mut slots1 = [0; 16];
+    let mut slots2 = [0; 16];
+    slots1[0] = 6; slots2[0] = 8; // 6 * 8 = 48 (Exactly the maximum allowed value!)
+    slots1[1] = 10; slots2[1] = 5; // 10 * 5 = 50 (Exceeds max of 48! Will wrap modulo 97 to -47)
+    
+    let c_poly1 = encrypt_integer_poly(&a_rgsw, &encode_slots(&slots1), &mut rng);
+    let c_poly2 = encrypt_integer_poly(&a_rgsw, &encode_slots(&slots2), &mut rng);
+    let dec_slots = decode_slots(&decrypt_integer_poly(&v_rgsw, &rgsw_mul(&c_poly1, &c_poly2)));
+    
+    println!("Slot 0 (6 * 8): Expected = 48, Decrypted = {}", dec_slots[0]);
+    println!("Slot 1 (10 * 5): Exceeds capacity! Wraps mod 97: Decrypted = {}", dec_slots[1]);
+}
+
 fn run_rgsw_demo() {
     let mut rng = thread_rng();
     let (v, a) = rgsw_keygen(&mut rng);
@@ -276,4 +332,6 @@ fn main() {
     run_attack_demo();
 
     run_complex_circuit_with_bootstrapping_demo();
+
+    run_limits_demo();
 }

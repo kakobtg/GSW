@@ -40,7 +40,25 @@ Implemented in `src/gsw/`
 
 ---
 
-# 3. The Gadget Matrix & Noise Management
+# 3. GSW Results in Action
+
+**Homomorphic Boolean Operations (XOR/AND):**
+```text
+Encrypting messages: m1 = 1, m2 = 1, m3 = 0
+Homomorphic Addition (m1 + m3): Expected = 1, Got = 1
+Homomorphic Multiplication (m1 * m2): Expected = 1, Got = 1
+```
+
+**Homomorphic Integer Arithmetic:**
+```text
+Encrypting integers: int1 = 13, int2 = 14
+Homomorphic Addition (int1 + int2): Expected = 27, Got = 27
+Homomorphic Multiplication (int1 * int2): Expected = 182, Got = 182
+```
+
+---
+
+# 4. The Gadget Matrix & Noise Management
 
 Multiplying ciphertexts normally explodes noise exponentially: $(E_1 \cdot E_2)$.
 
@@ -58,7 +76,7 @@ val >>= 1;
 
 ---
 
-# 4. Ring-GSW (RGSW)
+# 5. Ring-GSW (RGSW)
 
 Implemented in `src/rgsw/`
 
@@ -70,19 +88,56 @@ Implemented in `src/rgsw/`
 
 ---
 
-# 5. The Need for Bootstrapping
+# 6. Ring-GSW Results in Action
+
+Instead of operating on single bits, a single polynomial naturally evaluates arrays of bits simultaneously:
+```text
+--- RGSW Polynomial Packing ---
+Original packed bits: [1, 0, 1, 0, 0, 0, ...]
+Decrypted packed bits: [1, 0, 1, 0, 0, 0, ...]
+```
+
+It also evaluates arithmetic seamlessly:
+```text
+--- RGSW Scalar Small Integer Arithmetic ---
+RGSW Homomorphic Add (13 + 14): Got=27
+```
+
+---
+
+# 7. Hardware Limits & Data Capacity
+
+**GSW Integer Multiplication (9 bits max space):**
+```text
+Evaluating 20 * 20 (Fits in 9 bits):
+  -> Expected: 400, Decrypted: 400
+Evaluating 120 * 120 (Exceeds 511!):
+  -> Expected: 14400, Decrypted: 64 (Result wrapped modulo Q!)
+```
+
+**RGSW Vector Limits (Centered Modulo 97):**
+```text
+Slot 0 (6 * 8): Expected = 48, Decrypted = 48
+Slot 1 (10 * 5): Exceeds capacity! Wraps mod 97: Decrypted = -47
+```
+
+*Centered modulo allows negative numbers but cuts positive capacity in half!*
+
+---
+
+# 8. The Need for Bootstrapping
 
 - Even with the Gadget Matrix, noise grows. 
 - In our demo: Evaluating `res = (m1 AND m2) AND m3` causes cascaded multiplication error.
 - **Result from Demo:** 
   - *Target Phase:* 8,589,934,592
-  - *Noisy Phase:* 8,589,999,813
-  - *Accumulated Error:* **65,221**
+  - *Noisy Phase:* 8,590,144,939
+  - *Accumulated Error:* **210,347**
 - If we continue evaluating gates, the error will overflow, and decryption will fail.
 
 ---
 
-# 6. TFHE / AP14 Blind Rotation (Bootstrapping)
+# 9. TFHE / AP14 Blind Rotation (Bootstrapping)
 
 Implemented in `src/bootstrapping/`
 
@@ -103,18 +158,25 @@ current_acc = homomorphic_add(&current_acc, &selector);
 
 ---
 
-# 7. Bootstrapping Results
+# 10. Bootstrapping Results
 
 After running the highly degraded ciphertext through the Bootstrapping module:
 
-- **Before:** Accumulated Error = 65,221
-- **After:** Residual Error = 29,865
+```text
+[+] Extracting LWE Ciphertext from RGSW matrix...
+    -> Highly Noisy Phase: 8590144939 (Target: 8589934592)
+    -> Accumulated Error : 210347
+[+] Bootstrapping the damaged ciphertext to clear the noise...
+    -> Bootstrapped Phase: 8589936028 (Target: 8589934592)
+    -> Residual Error    : 1436
+[+] Success! Noise was drastically reduced through Bootstrapping.
+```
 
-**Success!** The error was slashed by more than half, resetting the ciphertext's lifespan. (In a production system with larger parameters, this residual error is virtually zero).
+**Success!** The error was slashed dramatically, resetting the ciphertext's lifespan. (In a production system with larger parameters, this residual error is virtually zero).
 
 ---
 
-# 8. Cryptanalysis: The Lattice Attack
+# 10. Cryptanalysis: The Lattice Attack
 
 Implemented in `src/attack.rs`
 
@@ -122,11 +184,16 @@ Implemented in `src/attack.rs`
 - **Method:** Kannan's Embedding technique.
 - We construct a lattice basis containing the public matrix $A$ and the modulus $Q$.
 - Using **SageMath**, we run the **LLL** (Lenstra–Lenstra–Lovász) algorithm to solve the Shortest Vector Problem (SVP).
-- **Result:** The script instantly recovers our private secret key vector ($\vec{s}$).
+
+```text
+Running LLL / BKZ lattice reduction...
+[+] LWE Broken! Recovered Secret s: (0, 0, 1, 0)
+[+] FINISHED
+```
 
 ---
 
-# 9. Why Did the Attack Work So Easily?
+# 11. Why Did the Attack Work So Easily?
 
 The system was completely broken because I used **"Toy Parameters"**.
 
@@ -138,7 +205,7 @@ The system was completely broken because I used **"Toy Parameters"**.
 
 ---
 
-# 10. Future Work: Making it Secure
+# 12. Future Work: Making it Secure
 
 To achieve **128-bit security**, we must change `params.rs`:
 
@@ -155,7 +222,7 @@ $$ a(x) * b(x) = \text{INTT}(\text{NTT}(a) \odot \text{NTT}(b)) $$
 
 ---
 
-# 11. NTT Commutative Diagram
+# 13. NTT Commutative Diagram
 
 The Number Theoretic Transform (NTT) provides a shortcut to bypass the expensive $O(N^2)$ polynomial convolution:
 
@@ -168,8 +235,7 @@ The Number Theoretic Transform (NTT) provides a shortcut to bypass the expensive
 
 ---
 
-# 12. Conclusion
-
+# 14. Conclusion
 
 - Successfully implemented standard GSW logic (Addition/Multiplication).
 - Transitioned to Ring-GSW for polynomial packing and CRT slots.
@@ -179,3 +245,10 @@ The Number Theoretic Transform (NTT) provides a shortcut to bypass the expensive
 
 ### Thank You!
 
+
+<style>
+img {
+  display: block;
+  margin: 0 auto;
+}
+</style>
