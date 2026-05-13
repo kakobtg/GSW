@@ -112,3 +112,7 @@ pub fn g_inverse(c: &PolyMatrix) -> PolyMatrix {
 }
 
 pub fn homomorphic_add(c1: &RgswBitCiphertext, c2: &RgswBitCiphertext) -> RgswBitCiphertext { RgswBitCiphertext(c1.0.add(&c2.0)) }
+
+pub fn homomorphic_mul(c1: &RgswBitCiphertext, c2: &RgswBitCiphertext) -> RgswBitCiphertext { 
+    RgswBitCiphertext(c1.0.mul(&g_inverse(&c2.0))) 
+}

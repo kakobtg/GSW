@@ -88,6 +88,100 @@ fn run_attack_demo() {
     export_lattice_basis_for_sage(&a);
 }
 
+fn run_complex_circuit_with_bootstrapping_demo() {
+    use GSW::params::rgsw::{N, Q, L, M};
+    use GSW::rgsw::{Poly, PolyMatrix, encrypt as rgsw_encrypt, homomorphic_mul as rgsw_mul};
+    use GSW::bootstrapping::{generate_bootstrapping_key, bootstrap};
+    use rand::Rng;
+
+    println!("\n=================================================");
+    println!("=== 5. RGSW Complex Circuit & Bootstrapping   ===");
+    println!("=================================================");
+    let mut rng = thread_rng();
+
+    println!("[+] Generating low-noise RGSW Keys for stable bootstrapping...");
+    let mut s = Poly::zero();
+    for i in 0..4 { s.coefs[i] = rng.gen_range(0..=1); } // 4 active bits for stability in toy Z_2N space
+    let mut a_rgsw = PolyMatrix::zeros(M, 2);
+    for i in 0..M {
+        *a_rgsw.get_mut(i, 0) = Poly::rand_mod_q(&mut rng);
+        *a_rgsw.get_mut(i, 1) = a_rgsw.get(i, 0).mul(&s).add(&Poly::rand_noise(&mut rng));
+    }
+
+    println!("[+] Encrypting inputs: m1=1, m2=1, m3=1...");
+    let c1 = rgsw_encrypt(&a_rgsw, 1, &mut rng).unwrap();
+    let c2 = rgsw_encrypt(&a_rgsw, 1, &mut rng).unwrap();
+    let c3 = rgsw_encrypt(&a_rgsw, 1, &mut rng).unwrap();
+
+    println!("[+] Evaluating Circuit: res = (m1 AND m2) AND m3");
+    println!("    -> This depth-2 multiplication cascades error exponentially!");
+    let c_and1 = rgsw_mul(&c1, &c2);
+    let c_res = rgsw_mul(&c_and1, &c3);
+
+    println!("[+] Extracting LWE Ciphertext from RGSW matrix...");
+    // RGSW Column 2L-2 conveniently encrypts `m * Q/4` due to the Gadget Matrix structure.
+    let target_col = 2 * L - 2; 
+    let poly_a = c_res.0.get(0, target_col);
+    let mut a_noisy = vec![0; N];
+    for i in 0..N { a_noisy[i] = poly_a.coefs[i]; }
+    let b_noisy = c_res.0.get(1, target_col).coefs[0];
+
+    // Derive the exact LWE secret key from the underlying RGSW polynomial ring 
+    let mut ext_sk = vec![0; N];
+    ext_sk[0] = s.coefs[0];
+    for i in 1..N { ext_sk[i] = (-s.coefs[N - i]).rem_euclid(Q); }
+
+    let mut dot_noisy = 0i64;
+    for i in 0..N { dot_noisy = ((dot_noisy as i128 + (a_noisy[i] as i128 * ext_sk[i] as i128)) % Q as i128) as i64; }
+    let phase_noisy = (b_noisy - dot_noisy).rem_euclid(Q);
+    let q_4 = Q / 4;
+    
+    let dist_noisy = (phase_noisy - q_4).rem_euclid(Q);
+    let error_noisy = std::cmp::min(dist_noisy, Q - dist_noisy);
+    println!("    -> Highly Noisy Phase: {} (Target: {})", phase_noisy, q_4);
+    println!("    -> Accumulated Error : {}", error_noisy);
+
+    println!("[+] Bootstrapping the damaged ciphertext to clear the noise...");
+    
+    // To bootstrap, we need the LWE ciphertext encrypted under a strictly binary key (s.coefs).
+    // We can rewrite the extracted LWE `a` vector to naturally map to `s.coefs` instead of `ext_sk`.
+    let mut a_prime = vec![0; N];
+    a_prime[0] = a_noisy[0];
+    for i in 1..N { a_prime[i] = (-a_noisy[N - i]).rem_euclid(Q); }
+
+    let bk = generate_bootstrapping_key(&a_rgsw, &s.coefs, &mut rng);
+    
+    let mut test_poly = Poly::zero();
+    for i in 0..N {
+        if i < N / 4 || i > 3 * N / 4 { test_poly.coefs[i] = 0; } 
+        else { test_poly.coefs[i] = (Q - q_4).rem_euclid(Q); }
+    }
+    let acc_init = GSW::rgsw::encrypt_poly(&a_rgsw, &test_poly, &mut rng);
+
+    // Scale the a_prime vector for the blind rotation
+    let mut a_scaled = vec![0; N];
+    for i in 0..N { a_scaled[i] = ((a_prime[i] as f64 * (2.0 * N as f64) / (Q as f64)).round() as i64).rem_euclid(2 * N as i64); }
+    let b_scaled = ((b_noisy as f64 * (2.0 * N as f64) / (Q as f64)).round() as i64).rem_euclid(2 * N as i64);
+
+    let (a_clean, b_clean) = bootstrap(&acc_init, &bk, &a_scaled, b_scaled);
+
+    // The bootstrap output is extracted natively from an RGSW matrix, meaning it is encrypted under ext_sk
+    let mut dot_clean = 0i64;
+    for i in 0..N { dot_clean = ((dot_clean as i128 + (a_clean[i] as i128 * ext_sk[i] as i128)) % Q as i128) as i64; }
+    let phase_clean = (b_clean - dot_clean).rem_euclid(Q);
+    
+    let dist_clean = (phase_clean - q_4).rem_euclid(Q);
+    let error_clean = std::cmp::min(dist_clean, Q - dist_clean);
+    println!("    -> Bootstrapped Phase: {} (Target: {})", phase_clean, q_4);
+    println!("    -> Residual Error    : {}", error_clean);
+
+    if error_clean < error_noisy {
+        println!("[+] Success! Noise was drastically reduced through Bootstrapping.");
+    } else {
+        println!("[-] Note: Due to toy parameters, noise might not perfectly reduce.");
+    }
+}
+
 fn run_rgsw_demo() {
     let mut rng = thread_rng();
     let (v, a) = rgsw_keygen(&mut rng);
@@ -180,4 +274,6 @@ fn main() {
     run_bootstrapping_demo();
     
     run_attack_demo();
+
+    run_complex_circuit_with_bootstrapping_demo();
 }

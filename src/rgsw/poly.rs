@@ -1,4 +1,5 @@
 use rand::Rng;
+use rayon::prelude::*;
 use crate::params::rgsw::*;
 
 #[derive(Clone, Debug)]
@@ -82,6 +83,24 @@ impl PolyMatrix {
         res
     }
     
+    pub fn mul(&self, other: &PolyMatrix) -> Self {
+        assert_eq!(self.cols, other.rows, "Matrix dimension mismatch");
+        let mut res = PolyMatrix::zeros(self.rows, other.cols);
+        res.data
+            .par_chunks_mut(other.cols)
+            .enumerate()
+            .for_each(|(r, row_slice)| {
+                for c in 0..other.cols {
+                    let mut sum = Poly::zero();
+                    for k in 0..self.cols {
+                        sum = sum.add(&self.get(r, k).mul(other.get(k, c)));
+                    }
+                    row_slice[c] = sum;
+                }
+            });
+        res
+    }
+
     pub fn transpose(&self) -> Self {
         let mut res = PolyMatrix::zeros(self.cols, self.rows);
         for r in 0..self.rows {

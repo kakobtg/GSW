@@ -17,8 +17,8 @@ pub fn g_inverse(c: &DMatrix<i64>) -> DMatrix<i64> {
         for row in 0..=N_LWE {
             let mut val = c[(row, col)].rem_euclid(Q);
             for j in 0..L {
-                z[(row * L + j, col)] = val % 2;
-                val /= 2;
+                z[(row * L + j, col)] = val & 1;
+                val >>= 1;
             }
         }
     }
