@@ -132,7 +132,7 @@ $\phi \approx b - \sum a_i s_i \pmod q$
 Instead of computing this directly in integers, we rotate a **Test Polynomial** (which acts as a lookup table/step function to map noisy phase values back to clean message boundaries) by this phase degree.
 1. **Initialization:** The accumulator (an RGSW encryption of the test polynomial) is uniformly multiplied/rotated by $X^b$.
 2. **Conditional Rotations (CMUX):** For each scalar $a_i$ in the LWE ciphertext, we homomorphically rotate the accumulator by $X^{-a_i}$ *if and only if* the secret key bit $s_i = 1$. Since $s_i$ is provided as an RGSW ciphertext inside the **Bootstrapping Key**, it operates as a homomorphic selector (multiplexer):
-   $ACC_{new} = ACC_{current} + RGSW(s_i) \cdot (ACC_{current} \cdot X^{-a_i} - ACC_{current})$
+   $$ACC_{new} = ACC_{current} + RGSW(s_i) \cdot (ACC_{current} \cdot X^{-a_i} - ACC_{current})$$
 3. **Sample Extraction:** After processing all $a_i$ components, the accumulator polynomial has been shifted by exactly the phase $\phi$. The $0$-th degree coefficient of the resulting polynomial naturally falls into the clean region of the lookup table. By extracting the corresponding coefficients from the RGSW matrix, we extract a fresh, low-noise LWE ciphertext.
 
 *Note: The blind rotation inner loop utilizes data-level parallelism via the `rayon` crate to significantly accelerate the heavy polynomial matrix operations.*

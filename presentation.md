@@ -9,7 +9,7 @@ paginate: true
 ## GSW, Ring-GSW, and TFHE Bootstrapping
 
 **Author:** Jakob Tønseth Gjeruldsen
-**Course/Project:** Cryptography and Security Protocols
+**Course:** Cryptography and Security Protocols
 
 ---
 
@@ -26,17 +26,17 @@ paginate: true
 ---
 
 # 2. The GSW Scheme (LWE)
-
-Implemented in `src/gsw/`
-
 - **Concept:** Relies on the **Approximate Eigenvector** method. 
   - Secret Key Vector: $\vec{v}$
   - Ciphertext Matrix: $C$
   - Message: $\mu$
-  - $C \cdot \vec{v} = \mu \cdot \vec{v} + \vec{e}$ (where $\vec{e}$ is a small noise vector)
-- **Operations:**
-  - Addition $\rightarrow$ Matrix Addition (XOR)
-  - Multiplication $\rightarrow$ Matrix Multiplication (AND)
+  - Gadget Matrix: $G$
+
+**Mathematical Operations:**
+- **Encryption:** $C = A \cdot R + \mu \cdot G$ (where $A$ is Public Key, $R$ is randomness)
+- **Decryption:** $C \cdot \vec{v} = \mu \cdot \vec{v} + \vec{e}$ (where $\vec{e}$ is small noise)
+- **Addition (XOR):** $C_{add} = C_1 + C_2 \implies C_{add} \cdot \vec{v} \approx (\mu_1 + \mu_2) \cdot \vec{v}$
+- **Multiplication (AND):** $C_{mult} = C_1 \cdot G^{-1}(C_2) \implies C_{mult} \cdot \vec{v} \approx (\mu_1 \cdot \mu_2) \cdot \vec{v}$
 
 ---
 
