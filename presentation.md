@@ -40,25 +40,7 @@ paginate: true
 
 ---
 
-# 3. GSW Results in Action
-
-**Homomorphic Boolean Operations (XOR/AND):**
-```text
-Encrypting messages: m1 = 1, m2 = 1, m3 = 0
-Homomorphic Addition (m1 + m3): Expected = 1, Got = 1
-Homomorphic Multiplication (m1 * m2): Expected = 1, Got = 1
-```
-
-**Homomorphic Integer Arithmetic:**
-```text
-Encrypting integers: int1 = 13, int2 = 14
-Homomorphic Addition (int1 + int2): Expected = 27, Got = 27
-Homomorphic Multiplication (int1 * int2): Expected = 182, Got = 182
-```
-
----
-
-# 4. The Gadget Matrix & Noise Management
+# 3. The Gadget Matrix & Noise Management
 
 Multiplying ciphertexts normally explodes noise exponentially: $(E_1 \cdot E_2)$.
 
@@ -72,6 +54,24 @@ Multiplying ciphertexts normally explodes noise exponentially: $(E_1 \cdot E_2)$
 // Fast Bit-Decomposition in Rust (g_inverse)
 z[(row * L + j, col)] = val & 1;
 val >>= 1;
+```
+
+---
+
+# 4. GSW Results in Action
+
+**Homomorphic Boolean Operations (XOR/AND):**
+```text
+Encrypting messages: m1 = 1, m2 = 1, m3 = 0
+Homomorphic Addition (m1 + m3): Expected = 1, Got = 1
+Homomorphic Multiplication (m1 * m2): Expected = 1, Got = 1
+```
+
+**Homomorphic Integer Arithmetic:**
+```text
+Encrypting integers: int1 = 13, int2 = 14
+Homomorphic Addition (int1 + int2): Expected = 27, Got = 27
+Homomorphic Multiplication (int1 * int2): Expected = 182, Got = 182
 ```
 
 ---
