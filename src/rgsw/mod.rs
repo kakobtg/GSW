@@ -15,14 +15,14 @@ pub struct RgswBitCiphertext(pub PolyMatrix);
 pub struct RgswPolyCiphertext(pub PolyMatrix);
 
 pub fn keygen(rng: &mut impl Rng) -> (PolyMatrix, PolyMatrix) {
-    let s = Poly::rand_binary(rng); 
-    let mut v = PolyMatrix::zeros(2, 1);
-    *v.get_mut(0, 0) = s.scalar_mul(-1);
-    *v.get_mut(1, 0) = Poly::from_scalar(1);
-    let mut a = PolyMatrix::zeros(M, 2);
+    let s = Poly::rand_binary(rng); // Generate secret polynomial 's' with binary coefficients
+    let mut v = PolyMatrix::zeros(2, 1); // Initialize extended secret key vector 'v' as a 2x1 polynomial matrix
+    *v.get_mut(0, 0) = s.scalar_mul(-1); // Set the first polynomial to -s
+    *v.get_mut(1, 0) = Poly::from_scalar(1); // Set the second polynomial to 1 (for eigenvalue extraction)
+    let mut a = PolyMatrix::zeros(M, 2); // Initialize public key matrix 'A'
     for i in 0..M {
-        *a.get_mut(i, 0) = Poly::rand_mod_q(rng);
-        *a.get_mut(i, 1) = a.get(i, 0).mul(&s).add(&Poly::rand_noise(rng));
+        *a.get_mut(i, 0) = Poly::rand_mod_q(rng); // Fill first column with random polynomials mod Q
+        *a.get_mut(i, 1) = a.get(i, 0).mul(&s).add(&Poly::rand_noise(rng)); // Compute Ring-LWE samples: b = a * s + e
     }
     (v, a)
 }
@@ -47,42 +47,42 @@ pub fn encrypt_poly(a: &PolyMatrix, m: &Poly, rng: &mut impl Rng) -> RgswPolyCip
 }
 
 fn core_encrypt(a: &PolyMatrix, m: &Poly, rng: &mut impl Rng) -> PolyMatrix {
-    let mut r = PolyMatrix::zeros(M, 2 * L);
+    let mut r = PolyMatrix::zeros(M, 2 * L); // Initialize random binary polynomial matrix 'R'
     for i in 0..M {
-        for j in 0..2 * L { *r.get_mut(i, j) = Poly::rand_binary(rng); }
+        for j in 0..2 * L { *r.get_mut(i, j) = Poly::rand_binary(rng); } // Fill 'R' with random binary polynomials
     }
-    let mut m_g = PolyMatrix::zeros(2, 2 * L);
+    let mut m_g = PolyMatrix::zeros(2, 2 * L); // Initialize matrix to hold m * G
     for i in 0..2 {
-        for j in 0..L { *m_g.get_mut(i, i * L + j) = Poly::from_scalar(1 << j).mul(m); }
+        for j in 0..L { *m_g.get_mut(i, i * L + j) = Poly::from_scalar(1 << j).mul(m); } // Compute m * G where G contains polynomial powers of 2
     }
     
     // Implement `mul` internally for core operations, using parallel chunks over output rows
-    let a_t = a.transpose();
-    let mut res = PolyMatrix::zeros(a_t.rows, r.cols);
-    res.data.par_chunks_mut(r.cols).enumerate().for_each(|(row, row_slice)| {
+    let a_t = a.transpose(); // Transpose public key 'A' for multiplication
+    let mut res = PolyMatrix::zeros(a_t.rows, r.cols); // Initialize result matrix for A * R
+    res.data.par_chunks_mut(r.cols).enumerate().for_each(|(row, row_slice)| { // Parallelize the heavy polynomial matrix multiplication
         for col in 0..r.cols {
             let mut sum = Poly::zero();
             for k in 0..a_t.cols { sum = sum.add(&a_t.get(row, k).mul(r.get(k, col))); }
             row_slice[col] = sum;
         }
     });
-    res.add(&m_g)
+    res.add(&m_g) // Final ciphertext equation: C = A * R + m * G
 }
 
 pub fn decrypt(v: &PolyMatrix, c: &RgswBitCiphertext) -> i64 {
-    let val = core_decrypt(v, &c.0, 2 * L - 1).coefs[0].rem_euclid(Q);
-    if std::cmp::min(val, Q - val) < (val - (Q / 2)).abs() { 0 } else { 1 }
+    let val = core_decrypt(v, &c.0, 2 * L - 1).coefs[0].rem_euclid(Q); // Extract phase from highest-order column of the Gadget matrix
+    if std::cmp::min(val, Q - val) < (val - (Q / 2)).abs() { 0 } else { 1 } // Round noisy phase to nearest binary boundary
 }
 
 pub fn decrypt_integer(v: &PolyMatrix, c: &RgswBitCiphertext) -> i64 {
-    let val = core_decrypt(v, &c.0, L + INT_SCALE_SHIFT).coefs[0].rem_euclid(Q);
-    let centered = if val > Q / 2 { val - Q } else { val };
-    (centered as f64 / (1_i64 << INT_SCALE_SHIFT) as f64).round() as i64
+    let val = core_decrypt(v, &c.0, L + INT_SCALE_SHIFT).coefs[0].rem_euclid(Q); // Extract phase from shifted column to prevent integer overflow
+    let centered = if val > Q / 2 { val - Q } else { val }; // Center value to support negative integers
+    (centered as f64 / (1_i64 << INT_SCALE_SHIFT) as f64).round() as i64 // Remove scaling shift to recover original integer
 }
 
 pub fn decrypt_poly(v: &PolyMatrix, c: &RgswPolyCiphertext) -> Poly {
     let mut res = Poly::zero();
-    for (i, &val) in core_decrypt(v, &c.0, 2 * L - 1).coefs.iter().enumerate() {
+    for (i, &val) in core_decrypt(v, &c.0, 2 * L - 1).coefs.iter().enumerate() { // Process every coefficient of the extracted polynomial independently
         let val = val.rem_euclid(Q);
         res.coefs[i] = if std::cmp::min(val, Q - val) < (val - (Q / 2)).abs() { 0 } else { 1 };
     }
@@ -104,29 +104,31 @@ pub fn decrypt_integer_poly(v: &PolyMatrix, c: &RgswBitCiphertext) -> Poly {
 }
 
 fn core_decrypt(v: &PolyMatrix, c: &PolyMatrix, target_col: usize) -> Poly {
-    let v_t = v.transpose();
+    let v_t = v.transpose(); // Transpose the extended secret key 'v'
     let mut res = Poly::zero();
-    for k in 0..v_t.cols { res = res.add(&v_t.get(0, k).mul(c.get(k, target_col))); }
+    for k in 0..v_t.cols { res = res.add(&v_t.get(0, k).mul(c.get(k, target_col))); } // Multiply v^T * C to compute the LWE phase polynomial
     res
 }
 
 pub fn g_inverse(c: &PolyMatrix) -> PolyMatrix {
-    let mut z = PolyMatrix::zeros(2 * L, 2 * L);
+    let mut z = PolyMatrix::zeros(2 * L, 2 * L); // Initialize flattened binary matrix for bit-decomposition
     for col in 0..2 * L {
         for row in 0..2 {
             let poly = c.get(row, col);
             for l in 0..L {
                 let mut z_poly = Poly::zero();
-                for d in 0..N { z_poly.coefs[d] = (poly.coefs[d] >> l) & 1; }
-                *z.get_mut(row * L + l, col) = z_poly;
+                for d in 0..N { z_poly.coefs[d] = (poly.coefs[d] >> l) & 1; } // Bit-decompose each coefficient of the polynomial independently
+                *z.get_mut(row * L + l, col) = z_poly; // Place decomposed polynomial into the expanded matrix
             }
         }
     }
     z
 }
 
-pub fn homomorphic_add(c1: &RgswBitCiphertext, c2: &RgswBitCiphertext) -> RgswBitCiphertext { RgswBitCiphertext(c1.0.add(&c2.0)) }
+pub fn homomorphic_add(c1: &RgswBitCiphertext, c2: &RgswBitCiphertext) -> RgswBitCiphertext { 
+    RgswBitCiphertext(c1.0.add(&c2.0)) // Simply add the polynomial matrices
+}
 
 pub fn homomorphic_mul(c1: &RgswBitCiphertext, c2: &RgswBitCiphertext) -> RgswBitCiphertext { 
-    RgswBitCiphertext(c1.0.mul(&g_inverse(&c2.0))) 
+    RgswBitCiphertext(c1.0.mul(&g_inverse(&c2.0))) // Multiply C1 by the bit-decomposed C2 to control polynomial error growth
 }

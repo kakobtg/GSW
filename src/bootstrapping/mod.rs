@@ -7,45 +7,45 @@ pub use key::{BootstrappingKey, generate_bootstrapping_key};
 
 pub fn multiply_by_x_power(poly: &Poly, a: i64) -> Poly {
     let mut res = Poly::zero();
-    let shift = a.rem_euclid(2 * N as i64) as usize;
+    let shift = a.rem_euclid(2 * N as i64) as usize; // Calculate cyclic shift amount modulo 2N (since X^N = -1)
     for i in 0..N {
         let wraps = (i + shift) / N;
         let mut val = poly.coefs[i];
-        if wraps % 2 != 0 { val = (-val).rem_euclid(Q); }
-        res.coefs[(i + shift) % N] = (res.coefs[(i + shift) % N] + val).rem_euclid(Q);
+        if wraps % 2 != 0 { val = (-val).rem_euclid(Q); } // Apply negacyclic property: shifting past N negates the coefficient
+        res.coefs[(i + shift) % N] = (res.coefs[(i + shift) % N] + val).rem_euclid(Q); // Place the shifted (and possibly negated) coefficient
     }
     res
 }
 
 pub fn acc_multiply_by_x_power(acc: &PolyMatrix, a: i64) -> PolyMatrix {
     let mut res = PolyMatrix::zeros(acc.rows, acc.cols);
-    res.data.par_iter_mut().zip(acc.data.par_iter()).for_each(|(r_poly, a_poly)| {
-        *r_poly = multiply_by_x_power(a_poly, a);
+    res.data.par_iter_mut().zip(acc.data.par_iter()).for_each(|(r_poly, a_poly)| { // Parallelize the rotation across all polynomials in the matrix
+        *r_poly = multiply_by_x_power(a_poly, a); // Rotate each polynomial by X^a
     });
     res
 }
 
 pub fn blind_rotate(acc: &RgswPolyCiphertext, bk: &BootstrappingKey, a: &[i64], b: i64) -> RgswPolyCiphertext {
-    let mut current_acc = acc_multiply_by_x_power(&acc.0, b);
-    for (i, a_i) in a.iter().enumerate() {
-        if *a_i == 0 { continue; }
+    let mut current_acc = acc_multiply_by_x_power(&acc.0, b); // Initialize accumulator by blindly rotating by public LWE phase offset 'b'
+    for (i, a_i) in a.iter().enumerate() { // Iterate over each component of the LWE ciphertext 'a'
+        if *a_i == 0 { continue; } // Skip rotation if the component is zero
         let bk_i = &bk.bk[i];
-        let acc_rotated = acc_multiply_by_x_power(&current_acc, -*a_i);
+        let acc_rotated = acc_multiply_by_x_power(&current_acc, -*a_i); // Compute ACC * X^{-a_i}
         let mut acc_diff = PolyMatrix::zeros(current_acc.rows, current_acc.cols);
         acc_diff.data.par_iter_mut().zip(acc_rotated.data.par_iter()).zip(current_acc.data.par_iter()).for_each(|((p_diff, p_rot), p_cur)| {
-            for k in 0..N { p_diff.coefs[k] = (p_rot.coefs[k] - p_cur.coefs[k]).rem_euclid(Q); }
+            for k in 0..N { p_diff.coefs[k] = (p_rot.coefs[k] - p_cur.coefs[k]).rem_euclid(Q); } // Compute the difference: ACC_rotated - ACC_current
         });
         
-        let z2 = crate::rgsw::g_inverse(&acc_diff);
+        let z2 = crate::rgsw::g_inverse(&acc_diff); // Bit-decompose the difference matrix for controlled error multiplication
         let mut selector = PolyMatrix::zeros(bk_i.0.rows, z2.cols);
-        selector.data.par_chunks_mut(z2.cols).enumerate().for_each(|(row, row_slice)| {
+        selector.data.par_chunks_mut(z2.cols).enumerate().for_each(|(row, row_slice)| { // Parallelize multiplication by the bootstrapping key (CMUX)
             for col in 0..z2.cols {
                 let mut sum = Poly::zero();
-                for k in 0..bk_i.0.cols { sum = sum.add(&bk_i.0.get(row, k).mul(z2.get(k, col))); }
+                for k in 0..bk_i.0.cols { sum = sum.add(&bk_i.0.get(row, k).mul(z2.get(k, col))); } // Evaluate RGSW(s_i) * (ACC_rotated - ACC_current)
                 row_slice[col] = sum;
             }
         });
-        current_acc = current_acc.add(&selector);
+        current_acc = current_acc.add(&selector); // Add selector result back: if s_i=1 it rotates, if s_i=0 it stays the same
     }
     RgswPolyCiphertext(current_acc)
 }
@@ -54,14 +54,14 @@ pub fn blind_rotate(acc: &RgswPolyCiphertext, bk: &BootstrappingKey, a: &[i64], 
 /// TODO: This is a simplified sample extraction placeholder. A production implementation
 /// must negate and rotate the `a` polynomial coefficients for correct negacyclic LWE key switching.
 pub fn sample_extract(acc: &RgswPolyCiphertext) -> (Vec<i64>, i64) {
-    let poly = acc.0.get(0, L);
+    let poly = acc.0.get(0, L); // Extract the polynomial from the phase column of the extended secret key structure
     let mut extracted_a = vec![0; N];
-    for i in 0..N { extracted_a[i] = poly.coefs[i]; }
-    (extracted_a, acc.0.get(1, L).coefs[0])
+    for i in 0..N { extracted_a[i] = poly.coefs[i]; } // Read coefficients to form the new LWE 'a' vector
+    (extracted_a, acc.0.get(1, L).coefs[0]) // Pair it with the 0-th degree constant term from the second row as the fresh LWE 'b' value
 }
 
 pub fn bootstrap(acc_init: &RgswPolyCiphertext, bk: &BootstrappingKey, lwe_ciphertext_a: &[i64], lwe_ciphertext_b: i64) -> (Vec<i64>, i64) {
-    sample_extract(&blind_rotate(acc_init, bk, lwe_ciphertext_a, lwe_ciphertext_b))
+    sample_extract(&blind_rotate(acc_init, bk, lwe_ciphertext_a, lwe_ciphertext_b)) // Chain blind rotation and sample extraction together
 }
 
 #[cfg(test)]

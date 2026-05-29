@@ -13,20 +13,20 @@ pub struct BitCiphertext(pub DMatrix<i64>);
 pub struct IntCiphertext(pub DMatrix<i64>);
 
 pub fn keygen(rng: &mut impl Rng) -> (DMatrix<i64>, DMatrix<i64>) {
-    let s = DMatrix::from_fn(N_LWE, 1, |_, _| rng.gen_range(0..=1_i64));
-    let mut v = DMatrix::zeros(N_LWE + 1, 1);
+    let s = DMatrix::from_fn(N_LWE, 1, |_, _| rng.gen_range(0..=1_i64)); // Generate the LWE secret key vector 's' as a column vector of binary values (0 or 1)
+    let mut v = DMatrix::zeros(N_LWE + 1, 1); // Create the extended secret key 'v' which acts as the approximate eigenvector
     for i in 0..N_LWE {
-        v[(i, 0)] = (-s[(i, 0)]).rem_euclid(Q);
+        v[(i, 0)] = (-s[(i, 0)]).rem_euclid(Q); // Populate the first N_LWE elements with -s mod Q
     }
-    v[(N_LWE, 0)] = 1;
-    let b_mat = DMatrix::from_fn(N_LWE, M, |_, _| rng.gen_range(0..Q));
-    let e = DMatrix::from_fn(1, M, |_, _| rng.gen_range(-1..=1));
-    let b = (s.transpose() * &b_mat + e).map(|x| x.rem_euclid(Q));
+    v[(N_LWE, 0)] = 1;  // Append a 1 at the end of 'v' to naturally extract the message and error during decryption
+    let b_mat = DMatrix::from_fn(N_LWE, M, |_, _| rng.gen_range(0..Q));     // Generate a random matrix for the public key
+    let e = DMatrix::from_fn(1, M, |_, _| rng.gen_range(-1..=1));    // Generate a small noise/error vector to ensure LWE security
+    let b = (s.transpose() * &b_mat + e).map(|x| x.rem_euclid(Q));     // Compute the standard LWE equation: b = s^T * A + e mod Q
     let mut a = DMatrix::zeros(N_LWE + 1, M);
     for i in 0..N_LWE {
         for j in 0..M { a[(i, j)] = b_mat[(i, j)]; }
     }
-    for j in 0..M { a[(N_LWE, j)] = b[(0, j)]; }
+    for j in 0..M { a[(N_LWE, j)] = b[(0, j)]; }     // Append the computed 'b' vector to the bottom row of the public key matrix 'A'
     (v, a)
 }
 
@@ -34,9 +34,9 @@ pub fn encrypt(a: &DMatrix<i64>, m: i64, rng: &mut impl Rng) -> Result<BitCipher
     if m != 0 && m != 1 {
         return Err(FheError::InvalidMessage { value: m, expected: "0 or 1" });
     }
-    let r = DMatrix::from_fn(M, N_COLS, |_, _| rng.gen_range(0..=1));
-    let g = gadget_matrix();
-    let mut c = a * r + m * g;
+    let r = DMatrix::from_fn(M, N_COLS, |_, _| rng.gen_range(0..=1));    // Generate a random binary matrix R for ciphertext randomization
+    let g = gadget_matrix();     // Generate the Gadget Matrix G (contains powers of 2 for bit decomposition)
+    let mut c = a * r + m * g;    // Core encryption equation: C = A * R + m * G
     c.apply(|x| *x = x.rem_euclid(Q));
     Ok(BitCiphertext(c))
 }
@@ -48,25 +48,32 @@ pub fn encrypt_integer(a: &DMatrix<i64>, m: i64, rng: &mut impl Rng) -> Result<I
     }
     let r = DMatrix::from_fn(M, N_COLS, |_, _| rng.gen_range(0..=1));
     let g = gadget_matrix();
+    // C = A * R + m * G (where m is the integer scalar instead of just 0 or 1)
     let mut c = a * r + m * g;
     c.apply(|x| *x = x.rem_euclid(Q));
     Ok(IntCiphertext(c))
 }
 
 pub fn decrypt(v: &DMatrix<i64>, c: &BitCiphertext) -> i64 {
+    // Multiply the ciphertext by the transposed extended secret key: v^T * C
     let vt_c = v.transpose() * &c.0;
+    // Extract the phase from the highest-order column of the Gadget matrix
     let val = vt_c[(0, N_COLS - 1)].rem_euclid(Q);
+    // Round the noisy phase to the nearest clean message boundary (0 or 1)
     if std::cmp::min(val, Q - val) < (val - (Q / 2)).abs() { 0 } else { 1 }
 }
 
 pub fn decrypt_integer(v: &DMatrix<i64>, c: &IntCiphertext) -> i64 {
     let vt_c = v.transpose() * &c.0;
+    // Extract the phase from a shifted column to allow room for integer multiplication growth without Q overflow
     let val = vt_c[(0, N_LWE * L + INT_SCALE_SHIFT)].rem_euclid(Q);
     let centered_val = if val > Q / 2 { val - Q } else { val };
+    // Scale the extracted value back down by removing the shift factor to get the original integer
     (centered_val as f64 / (1_i64 << INT_SCALE_SHIFT) as f64).round() as i64
 }
 
 pub fn homomorphic_add(c1: &BitCiphertext, c2: &BitCiphertext) -> BitCiphertext {
+    // Simply add the two ciphertext matrices together (Acts identically to a homomorphic XOR gate for bits)
     let mut c_sum = &c1.0 + &c2.0;
     c_sum.apply(|x| *x = x.rem_euclid(Q));
     BitCiphertext(c_sum)
@@ -79,6 +86,7 @@ pub fn homomorphic_add_int(c1: &IntCiphertext, c2: &IntCiphertext) -> IntCiphert
 }
 
 pub fn homomorphic_mul(c1: &BitCiphertext, c2: &BitCiphertext) -> BitCiphertext {
+    // Multiply C1 by the bit-decomposed (flattened) version of C2 to prevent exponential noise growth (Acts as an AND gate)
     let mut c_prod = &c1.0 * g_inverse(&c2.0);
     c_prod.apply(|x| *x = x.rem_euclid(Q));
     BitCiphertext(c_prod)
@@ -103,13 +111,18 @@ pub fn homomorphic_equal(a: &DMatrix<i64>, vec1: &[BitCiphertext], vec2: &[BitCi
         return Err(FheError::VectorLengthMismatch { len1: vec1.len(), len2: vec2.len() });
     }
     let enc_one = encrypt(a, 1, rng)?;
+    // Step 1: Compare pairs of bits using XNOR
     let mut xnor_bits: Vec<_> = vec1.iter().zip(vec2.iter()).map(|(b1, b2)| {
+        // (b1 XOR b2) XOR 1 is equivalent to XNOR (outputs 1 if bits are equal, 0 if different)
         homomorphic_add(&homomorphic_add(b1, b2), &enc_one)
     }).collect();
+    
+    // Step 2: Reduce the pair-wise XNOR results in a binary tree structure using homomorphic AND (multiplication)
     while xnor_bits.len() > 1 {
         let mut next_level = Vec::new();
         for chunk in xnor_bits.chunks(2) {
             if chunk.len() == 2 {
+                // Multiply two equality bits; both must be 1 (equal) for the output to be 1
                 next_level.push(homomorphic_mul(&chunk[0], &chunk[1]));
             } else {
                 next_level.push(chunk[0].clone());
@@ -119,6 +132,7 @@ pub fn homomorphic_equal(a: &DMatrix<i64>, vec1: &[BitCiphertext], vec2: &[BitCi
     }
     Ok(xnor_bits.pop().unwrap())
 }
+
 
 #[cfg(test)]
 mod tests {
